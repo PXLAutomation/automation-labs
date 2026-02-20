@@ -41,8 +41,8 @@ if ! grep -q "PXL_LAB_BEGIN" /etc/hosts; then
   cat <<EOF >> /etc/hosts
 
 # PXL_LAB_BEGIN
-192.168.121.100 webserver1.pxldemo.local webserver1
-192.168.121.101 dbserver1.pxldemo.local dbserver1
+10.10.0.10 webserver1.pxldemo.local webserver1
+10.10.0.20 dbserver1.pxldemo.local dbserver1
 # PXL_LAB_END
 
 EOF
@@ -59,7 +59,7 @@ fi
       guest: 8080, host: 8080
 
     server.vm.network "private_network",
-      ip: "192.168.121.100"
+      ip: "10.10.0.10"
 
     server.vm.provision "shell", inline: HOSTS_BLOCK
   end
@@ -71,7 +71,7 @@ fi
     server.vm.hostname = "dbserver1.pxldemo.local"
 
     server.vm.network "private_network",
-      ip: "192.168.121.101"
+      ip: "10.10.0.20"
 
     server.vm.provision "shell", inline: HOSTS_BLOCK
   end
@@ -81,18 +81,7 @@ fi
   # --------------------------------
   config.trigger.after :up do |trigger|
     trigger.info = "Updating host /etc/hosts for PXL lab"
-
-    trigger.run = {
-      inline: <<-SHELL
-if ! grep -q "PXL_LAB_BEGIN" /etc/hosts; then
-  echo "" | sudo tee -a /etc/hosts
-  echo "# PXL_LAB_BEGIN" | sudo tee -a /etc/hosts
-  echo "192.168.121.100 webserver1.pxldemo.local webserver1" | sudo tee -a /etc/hosts
-  echo "192.168.121.101 dbserver1.pxldemo.local dbserver1" | sudo tee -a /etc/hosts
-  echo "# PXL_LAB_END" | sudo tee -a /etc/hosts
-fi
-      SHELL
-    }
+    trigger.run = { path: "update_hosts.sh" }
   end
 
   config.vm.post_up_message = "PXL Lab build complete."

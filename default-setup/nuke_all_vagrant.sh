@@ -192,7 +192,7 @@ log "Step 3: libvirt volumes in pool '${POOL_NAME}' matching prefix '${PROJECT_P
 if ! virsh_cmd pool-info "$POOL_NAME" >/dev/null 2>&1; then
   log "Pool '${POOL_NAME}' not found (skipping volume cleanup)."
 else
-  vols="$(virsh_cmd vol-list "$POOL_NAME" --name 2>/dev/null || true)"
+  vols="$(virsh_cmd vol-list "$POOL_NAME" 2>/dev/null | awk 'NR>2 && $1!="" {print $1}' || true)"
   matched_vols=()
 
   if [[ -n "$vols" ]]; then
