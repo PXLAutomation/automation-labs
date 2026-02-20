@@ -35,6 +35,14 @@ This repository provides an automated environment for PXL Labs using Vagrant, Li
  vagrant status
  ```
 
+**Test SSH access to a VM:**
+
+```sh
+vagrant ssh <vm-name>
+```
+
+Replace `<vm-name>` with the name defined in your Vagrantfile (e.g., `webserver1` or `dbserver1`).
+
 **Run Ansible playbook:**
 
  ```sh
