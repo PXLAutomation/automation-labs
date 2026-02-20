@@ -1,15 +1,24 @@
-# .vagrant/ directory
-.vagrant/
+# Merged .gitignore and .gitignore copy
 
-# VirtualBox files
-*.vbox
-*.vbox-prev
+# Ansible
+ansible_facts/
+ansible.log
+.ansible/
+*.retry
+hosts
+*.vault
 
-# Vagrant backups
-*.backup
+# Ansible logs
+*.log
 
-# Virtual machine disk files
-*.vmdk
+
+# Vagrant
+.vagrant/           # Vagrant working directory
+*.box               # Vagrant box files
+*.vbox              # VirtualBox VM config
+*.vbox-prev         # VirtualBox previous config
+*.backup            # Vagrant backup files
+*.vmdk              # Virtual machine disk files
 
 # Log files
 *.log
@@ -18,24 +27,8 @@
 .cache
 
 # Generated files
-*.box
 *.ova
 
 # Environment Variables
 .env
 
-# Ansible generated files
-*.retry
-hosts
-
-# Ansible logs
-*.log
-
-# Ansible vault
-*.vault
-
-# Ansible ssh key
-.ansible/tmp/ansible-ssh-*
-
-# Ansible temporary files
-.ansible/tmp/
