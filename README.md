@@ -11,8 +11,46 @@ Automated lab environment for PXL Labs. Spins up two AlmaLinux 9 VMs using Vagra
 
 ```sh
 git clone https://github.com/PXLAutomation/automation-labs.git
-cd automation-2526/default-setup
+cd automation-labs
+```
+
+### Initial Set-up
+
+```sh
+cd initial-setup
 vagrant up
+```
+
+### Default set-up
+
+```sh
+cd default-setup
+vagrant up
+```
+
+### Test Connectivity
+
+Test whether Ansible can communicate with the default Vagrant hosts.
+
+```sh
+ansible all -i inventory.ini -m ping
+```
+
+- The built-in inventory group `all` targets every host in the inventory file.
+- The built-in `ping` module verifies that Ansible can establish a connection via ssh and execute modules through python on the managed nodes.
+  - It is not the same as the `ping` system network tool that works through ICMP.
+
+*Expected Output:*
+
+```json
+[...]
+
+webserver1.pxldemo.local | SUCCESS => {
+    "changed": false,
+    "ping": "pong"
+}
+
+[...]
 ```
 
 ## VMs
@@ -60,8 +98,9 @@ ssh -i ~/.vagrant.d/insecure_private_key -p 2222 vagrant@127.0.0.1  # webserver1
 
 `vagrant up` automatically adds to both the **host machine** and each **guest VM**:
 
-```
+```text
 10.10.0.10 webserver1.pxldemo.local webserver1
+10.10.0.11 webserver2.pxldemo.local webserver2 (if initial-set-up is run)
 10.10.0.20 dbserver1.pxldemo.local dbserver1
 ```
 
@@ -70,7 +109,6 @@ VMs can reach each other by hostname. From the host, you can use the static IPs 
 ## Common Commands
 
 ```sh
-cd default-setup
 vagrant up                                      # start all VMs
 vagrant up webserver1                           # start one VM
 vagrant status                                  # check state
@@ -102,4 +140,3 @@ The nuke script preserves base box images and ISOs.
 ```sh
 ansible-playbook -i inventory.ini playbook.yml
 ```
-
