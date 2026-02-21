@@ -2,7 +2,10 @@
 
 ## Overview
 
-Automated lab environment for PXL Labs. Spins up two AlmaLinux 9 VMs using Vagrant + Libvirt/KVM, with Ansible for configuration management.
+Automated lab environment for PXL Labs. Spins up two AlmaLinux 9 VMs using Vagrant + Libvirt/KVM, with Ansible for configuration management. This repository contains:
+
+- **initial-setup**: For starting the labs
+- **default-setup**: The primary setup for many exercises.
 
 ## Quick Start
 
@@ -14,12 +17,24 @@ vagrant up
 
 ## VMs
 
-| Name | Hostname | Private IP | Forwarded port |
-|------|----------|------------|----------------|
-| webserver1 | webserver1.pxldemo.local | 10.10.0.10 | host:8080 -> guest:8080 |
-| dbserver1 | dbserver1.pxldemo.local | 10.10.0.20 | - |
+Each VM has two network interfaces:
 
-- Box: `generic/alma9` version `4.3.12` (hard-pinned)
+| Interface | Network               | Address              | Purpose              |
+|-----------|-----------------------|----------------------|----------------------|
+| eth0      | 192.168.121.0/24 (DHCP) | changes on every recreate | Vagrant management - used internally for SSH during provisioning, do not rely on this IP |
+| eth1      | 10.10.0.0/24 (static) | see table above       | Lab network - stable across recreates, use this for everything |
+
+The host machine is the gateway at `10.10.0.1` on the lab network and can reach both VMs directly by IP or hostname once `/etc/hosts` is updated.
+
+| Name       | Hostname               | Private IP       | Forwarded port       |
+|------------|------------------------|------------------|----------------------|
+| webserver1 | webserver1.pxldemo.local | 10.10.0.10 | host:8080 -> guest:8080 |
+| webserver2 (initial set-up only) | webserver1.pxldemo.local | 10.10.0.11 | host:8081 -> guest:8080 |
+| dbserver1  | dbserver1.pxldemo.local | 10.10.0.20 | -                    |
+
+VM-to-VM traffic (e.g. webserver1 -> dbserver1) travels over eth1 via the static IPs. Hostname resolution between VMs is handled by `/etc/hosts` on each guest, populated automatically on first `vagrant up`.
+
+- Box: version-locked Almalinux (<https://almalinux.org>)
 - Each VM: 2 GB RAM, 2 CPUs
 
 ## Credentials & Access
@@ -41,7 +56,7 @@ ssh -i ~/.vagrant.d/insecure_private_key -p 2222 vagrant@127.0.0.1  # webserver1
 - **Password:** `vagrant` (default for all Vagrant boxes)
 - **Sudo:** passwordless inside the VM (`vagrant` user has NOPASSWD sudo)
 
-### /etc/hosts
+### `/etc/hosts` file
 
 `vagrant up` automatically adds to both the **host machine** and each **guest VM**:
 
@@ -55,12 +70,12 @@ VMs can reach each other by hostname. From the host, you can use the static IPs 
 ## Common Commands
 
 ```sh
+cd default-setup
 vagrant up                                      # start all VMs
 vagrant up webserver1                           # start one VM
 vagrant status                                  # check state
 vagrant ssh webserver1                          # shell into VM
-vagrant destroy -f                              # destroy all VMs (clean, no orphans)
-vagrant provision                               # re-run provisioners
+vagrant destroy -f                              # destroy all VMs (clean)
 
 ansible-playbook -i inventory.ini playbook.yml  # run Ansible playbook
 ```
@@ -88,22 +103,3 @@ The nuke script preserves base box images and ISOs.
 ansible-playbook -i inventory.ini playbook.yml
 ```
 
-`playbook.yml` is a template - add your tasks there.
-
-## Network
-
-Each VM has two network interfaces:
-
-| Interface | Network | Address | Purpose |
-|-----------|---------|---------|---------|
-| eth0 | 192.168.121.0/24 (DHCP) | changes on every recreate | Vagrant management - used internally for SSH during provisioning, do not rely on this IP |
-| eth1 | 10.10.0.0/24 (static) | see table above | Lab network - stable across recreates, use this for everything |
-
-The host machine is the gateway at `10.10.0.1` on the lab network and can reach both VMs directly by IP or hostname once `/etc/hosts` is updated.
-
-| Hostname | FQDN | IP |
-|----------|------|----|
-| webserver1 | webserver1.pxldemo.local | 10.10.0.10 |
-| dbserver1 | dbserver1.pxldemo.local | 10.10.0.20 |
-
-VM-to-VM traffic (e.g. webserver1 → dbserver1) travels over eth1 via the static IPs. Hostname resolution between VMs is handled by `/etc/hosts` on each guest, populated automatically on first `vagrant up`.
