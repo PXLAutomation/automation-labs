@@ -1,4 +1,4 @@
-# automation-2526
+# automation-labs
 
 ## Overview
 
