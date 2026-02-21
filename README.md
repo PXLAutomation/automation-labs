@@ -7,7 +7,7 @@ Automated lab environment for PXL Labs. Spins up two AlmaLinux 9 VMs using Vagra
 ## Quick Start
 
 ```sh
-git clone https://github.com/PXLAutomation/automation-2526.git
+git clone https://github.com/PXLAutomation/automation-labs.git
 cd automation-2526/default-setup
 vagrant up
 ```
