@@ -1,6 +1,6 @@
 # automation-labs
 
-## Overviewwwww
+## Overview
 
 Automated lab environment for PXL Labs. Spins up two AlmaLinux 9 VMs using Vagrant + Libvirt/KVM, with Ansible for configuration management. This repository contains:
 
