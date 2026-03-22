@@ -5,6 +5,8 @@
 # Destroys all known Vagrant environments, removes all libvirt domains,
 # deletes all volumes from the default storage pool, and deletes all
 # non-default libvirt networks and storage pools.
+# Also removes best-effort SSH known_hosts entries for discovered
+# Vagrant SSH targets before the machines are destroyed.
 #
 # Usage:
 #   ./nuke_all_vagrant.sh             dry run
@@ -22,6 +24,11 @@ QUIET=false
 LIBVIRT_URI="qemu:///system"
 LOCKDIR="${TMPDIR:-/tmp}/${SCRIPT_NAME}.lockdir"
 FAILURES=0
+KNOWN_HOSTS_FILE="${HOME}/.ssh/known_hosts"
+declare -a KNOWN_HOST_TARGETS=()
+declare -A KNOWN_HOST_TARGETS_SEEN=()
+COLOR_STAGE=""
+COLOR_RESET=""
 
 print_usage() {
   cat <<EOF
@@ -37,6 +44,20 @@ EOF
 log()  { [[ "$QUIET" == false ]] && echo "$@" || true; }
 warn() { echo "Warning: $*" >&2; }
 die()  { echo "Error: $*" >&2; exit 1; }
+
+setup_colors() {
+  if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+    COLOR_STAGE=$'\033[1;36m'
+    COLOR_RESET=$'\033[0m'
+  fi
+}
+
+stage() {
+  local message="$1"
+  if [[ "$QUIET" == false ]]; then
+    printf '\n%s%s%s\n' "$COLOR_STAGE" "$message" "$COLOR_RESET"
+  fi
+}
 
 virsh_cmd() { virsh -c "$LIBVIRT_URI" "$@"; }
 
@@ -98,6 +119,90 @@ network_exists() {
 
 pool_exists() {
   virsh_cmd pool-info "$1" >/dev/null 2>&1
+}
+
+is_valid_port() {
+  [[ "$1" =~ ^[0-9]+$ ]] && (( "$1" >= 1 && "$1" <= 65535 ))
+}
+
+register_known_host_target() {
+  local target="$1"
+  [[ -n "$target" ]] || return 0
+
+  if [[ -z "${KNOWN_HOST_TARGETS_SEEN[$target]+x}" ]]; then
+    KNOWN_HOST_TARGETS+=("$target")
+    KNOWN_HOST_TARGETS_SEEN["$target"]=1
+  fi
+}
+
+collect_known_host_targets_from_ssh_config() {
+  local env_name="$1"
+  local env_dir="$2"
+  local ssh_config=""
+  local host_alias=""
+  local host_name=""
+  local port=""
+
+  register_known_host_target "$env_name"
+
+  [[ -d "$env_dir" ]] || return 0
+
+  if ! ssh_config="$(cd "$env_dir" && vagrant ssh-config "$env_name" 2>/dev/null)"; then
+    return 0
+  fi
+
+  host_alias="$(printf '%s\n' "$ssh_config" | awk '/^Host / { print $2; exit }')"
+  host_name="$(printf '%s\n' "$ssh_config" | awk '/^[[:space:]]*HostName / { print $2; exit }')"
+  port="$(printf '%s\n' "$ssh_config" | awk '/^[[:space:]]*Port / { print $2; exit }')"
+
+  register_known_host_target "$host_alias"
+  register_known_host_target "$host_name"
+
+  if is_valid_port "$port"; then
+    [[ -n "$host_alias" ]] && register_known_host_target "[$host_alias]:$port"
+    [[ -n "$host_name" ]] && register_known_host_target "[$host_name]:$port"
+  fi
+}
+
+cleanup_known_hosts() {
+  local removed_any=false
+  local target=""
+
+  if ! command -v ssh-keygen >/dev/null 2>&1; then
+    warn "ssh-keygen not found; skipping known_hosts cleanup"
+    return 0
+  fi
+
+  if [[ ! -f "$KNOWN_HOSTS_FILE" ]]; then
+    log "No known_hosts file found at '$KNOWN_HOSTS_FILE'."
+    return 0
+  fi
+
+  if [[ ${#KNOWN_HOST_TARGETS[@]} -eq 0 ]]; then
+    log "No SSH known_hosts targets discovered."
+    return 0
+  fi
+
+  for target in "${KNOWN_HOST_TARGETS[@]}"; do
+    if ! ssh-keygen -F "$target" -f "$KNOWN_HOSTS_FILE" >/dev/null 2>&1; then
+      continue
+    fi
+
+    removed_any=true
+
+    if [[ "$FORCE" == false ]]; then
+      log "DRY-RUN: ssh-keygen -R '$target' -f '$KNOWN_HOSTS_FILE'"
+      continue
+    fi
+
+    if ssh-keygen -R "$target" -f "$KNOWN_HOSTS_FILE" >/dev/null 2>&1; then
+      log "Removed known_hosts entry: $target"
+    else
+      warn "failed to remove known_hosts entry: $target"
+    fi
+  done
+
+  [[ "$removed_any" == true ]] || log "No matching known_hosts entries found."
 }
 
 domain_is_active() {
@@ -233,24 +338,38 @@ command -v vagrant >/dev/null 2>&1 || die "vagrant not found"
 command -v virsh >/dev/null 2>&1 || die "virsh not found"
 
 acquire_lock
+setup_colors
 
 log "Libvirt URI: ${LIBVIRT_URI}"
 log "Mode:        $( [[ "$FORCE" == true ]] && echo 'DESTRUCTIVE (--force)' || echo 'DRY RUN' )"
 
-log ""
-log "Step 1: destroy all known Vagrant environments"
+stage "Step 1: discover Vagrant SSH targets and destroy all known environments"
 
 if [[ "$FORCE" == false ]]; then
+  log "DRY-RUN: collect SSH known_hosts targets from all Vagrant environments"
+  log "DRY-RUN: ssh-keygen -R <discovered targets> -f '$KNOWN_HOSTS_FILE'"
   log "DRY-RUN: vagrant global-status --prune"
   log "DRY-RUN: vagrant destroy -f <all envs>"
 else
   run_action "vagrant global-status --prune" vagrant global-status --prune
 
   env_ids=()
+  env_names=()
+  env_dirs=()
   vagrant_status_output=""
   if capture_into "vagrant global-status" vagrant_status_output vagrant global-status; then
     mapfile -t env_ids < <(printf '%s\n' "$vagrant_status_output" | awk '/^[0-9a-f]{7}[[:space:]]+/ {print $1}')
+    mapfile -t env_names < <(printf '%s\n' "$vagrant_status_output" | awk '/^[0-9a-f]{7}[[:space:]]+/ {print $2}')
+    mapfile -t env_dirs < <(printf '%s\n' "$vagrant_status_output" | awk '/^[0-9a-f]{7}[[:space:]]+/ {print $5}')
   fi
+
+  if [[ ${#env_names[@]} -gt 0 ]]; then
+    for i in "${!env_names[@]}"; do
+      collect_known_host_targets_from_ssh_config "${env_names[$i]}" "${env_dirs[$i]}"
+    done
+  fi
+
+  cleanup_known_hosts
 
   if [[ ${#env_ids[@]} -eq 0 ]]; then
     log "No Vagrant environments found."
@@ -264,8 +383,7 @@ else
   run_action "vagrant global-status --prune" vagrant global-status --prune
 fi
 
-log ""
-log "Step 2: remove all libvirt domains and their VM disks"
+stage "Step 2: remove all libvirt domains and their VM disks"
 
 domains=()
 domain_output=""
@@ -281,8 +399,7 @@ else
   done
 fi
 
-log ""
-log "Step 3: remove all volumes from the default storage pool"
+stage "Step 3: remove all volumes from the default storage pool"
 
 pools=()
 pool_output=""
@@ -298,8 +415,7 @@ else
   done
 fi
 
-log ""
-log "Step 4: remove all non-default libvirt networks"
+stage "Step 4: remove all non-default libvirt networks"
 
 networks=()
 network_output=""
@@ -315,8 +431,7 @@ else
   done
 fi
 
-log ""
-log "Step 5: remove all non-default storage pool definitions"
+stage "Step 5: remove all non-default storage pool definitions"
 
 if [[ ${#pools[@]} -eq 0 ]]; then
   log "No storage pools found."
@@ -326,8 +441,7 @@ else
   done
 fi
 
-log ""
-log "Step 6: remove the local .vagrant directory for this environment"
+stage "Step 6: remove the local .vagrant directory for this environment"
 
 if [[ -d "${SCRIPT_DIR}/.vagrant" ]]; then
   run_action "rm -rf '${SCRIPT_DIR}/.vagrant'" rm -rf "${SCRIPT_DIR}/.vagrant"
@@ -342,3 +456,7 @@ if [[ "$FAILURES" -gt 0 ]]; then
 fi
 
 log "Done. Run 'vagrant up' to start fresh."
+
+if [[ "$FORCE" == false ]]; then
+  log "Warning: dry run only. Re-run with: ${SCRIPT_DIR}/${SCRIPT_NAME} --force"
+fi
